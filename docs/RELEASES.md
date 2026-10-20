@@ -48,11 +48,11 @@ credentials. Remove saved profiles inside Puff to delete their saved credentials
 
 ## CI artifacts
 
-The Fedora and Debian workflows compile, run core/SQLite and GTK lifecycle tests,
+The Fedora and manually invoked Debian workflows compile, run core/SQLite and GTK lifecycle tests,
 and upload their native installers. Fedora additionally tests a temporary real
 PostgreSQL cluster. CI requires pushing this source to a GitHub repository with
-Actions enabled. No remote is configured in this checkout; no workflow run or
-uploaded artifact is implied by the presence of these files.
+Actions enabled. The repository is published at https://github.com/acefolioDev/puff. No successful
+workflow run or uploaded CI artifact is implied by the presence of these files.
 
 ## macOS preview
 

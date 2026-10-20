@@ -1,5 +1,5 @@
 name: Debian package
-on: [push, pull_request, workflow_dispatch]
+on: [workflow_dispatch]
 jobs:
   debian:
     runs-on: ubuntu-latest

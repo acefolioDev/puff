@@ -18,9 +18,16 @@ Requires C++20, GTK ≥4.12, libadwaita ≥1.4, GtkSourceView 5 and libpq ≥17.
 ## Install the Fedora package
 
 ```bash
+cd releases
+sha256sum -c SHA256SUMS
+sudo dnf install ./puff-0.2.0-2.fc44.x86_64.rpm
+```
+
+The verified Fedora 44 x86_64 installer is committed under `releases/`. To rebuild it after installing the development dependencies above:
+
+```bash
 sudo dnf install rpm-build desktop-file-utils
 make rpm
-sudo dnf install ./dist/puff-0.2.0-1.fc44.x86_64.rpm
 ```
 
 Launch **My Puff** from GNOME/KDE application search, or run `puff`. The RPM replaces the older `puff` package. Runtime libraries are declared automatically from ELF dependencies. PostgreSQL command-line tools are recommended for backup/restore:
@@ -31,7 +38,7 @@ sudo dnf install postgresql
 
 Uninstall with `sudo dnf remove puff`. Your private profiles/history and desktop keyring entries are retained; remove saved credentials through the connection dialog before uninstalling if desired. No install script changes PostgreSQL authentication, services, SELinux settings or database contents.
 
-The RPM installs `/usr/bin/puff`, a desktop entry, scalable icon, AppStream metadata, documentation and license. Fedora's desktop/icon triggers perform indexing. `packaging/puff.spec` also supports a normal source build from `dist/puff-0.2.0.tar.gz`; `scripts/package-rpm.sh` packages the already-tested local binary using the same specification. Build on each supported Fedora architecture/release; only Fedora 44 x86_64 is verified here.
+The RPM installs `/usr/bin/puff`, a desktop entry, scalable icon, AppStream metadata, documentation and license. Fedora's desktop/icon triggers perform indexing. `packaging/puff.spec` also supports a normal source build from `dist/puff-0.2.0.tar.gz`; `scripts/package-rpm.sh` rebuilds and packages the native binary using the same specification. Build on each supported Fedora architecture/release; only Fedora 44 x86_64 is verified here.
 
 ## Connect locally
 
@@ -66,7 +73,7 @@ Query history is opt-in per tab because SQL can contain secrets. Search and clea
 
 Profiles, snippets and optional history live in `$XDG_CONFIG_HOME/puff/workspace.sqlite3`, falling back to `~/.config/puff/`. The directory is 0700 and file 0600. The old `connections.json` is imported once without passwords and left unchanged. Deleted imported profiles are not resurrected on later startup.
 
-Passwords remain in memory unless you explicitly select **Store password in desktop Secret Service**. libsecret talks to GNOME Keyring or a compatible service; a locked/unavailable service reports an error rather than falling back to plaintext. Unchecking remember and saving removes a previously remembered credential; **Remove saved profile and credential** deletes both. Keyring storage requires a working desktop secret service; no keyring daemon is bundled. Opened sessions clear their password storage on disconnect where practical; ordinary C++ string copies cannot provide a guarantee that every historical heap byte is securely erased.
+Passwords remain in memory unless you explicitly select **Store password in system keyring**. libsecret talks to GNOME Keyring or a compatible service; a locked/unavailable service reports an error rather than falling back to plaintext. Unchecking remember and saving removes a previously remembered credential; **Remove saved profile and credential** deletes both. Keyring storage requires a working desktop secret service; no keyring daemon is bundled. Opened sessions clear their password storage on disconnect where practical; ordinary C++ string copies cannot provide a guarantee that every historical heap byte is securely erased.
 
 PostgreSQL values use bound parameters; identifiers are quoted and DDL types allowlisted. Read-only settings are an accidental-write safeguard, not a replacement for database permissions. Risk detection is conservative UX, not a complete SQL parser or authorization boundary. Production connections require explicit target confirmation. There is no automatic destructive-query retry, AI integration, outbound analytics or automatic database/service modification. Errors redact the connection password and recognizable password/URI fields. There is no persistent diagnostic log containing queries or credentials.
 
@@ -103,3 +110,37 @@ See [the prioritized engineering roadmap](docs/ROADMAP.md) and
 [release/build instructions](docs/RELEASES.md) for the connection-workflow changes,
 Debian/Fedora packages and macOS preview workflow. Outstanding capabilities and
 platform verification are explicitly listed there.
+
+## Generate a Debian installer later
+
+Debian and macOS builds are deferred; their workflows run only when manually requested. No Debian or macOS installer is claimed as verified for this release.
+
+On Debian 13 (trixie), install the build dependencies and generate the native `.deb`:
+
+```bash
+sudo apt-get update
+sudo apt-get install g++ make pkg-config libgtk-4-dev libadwaita-1-dev \
+  libgtksourceview-5-dev libsecret-1-dev libpq-dev libsqlite3-dev dpkg-dev \
+  desktop-file-utils xvfb xauth dbus-x11 python3
+make test
+xvfb-run -a dbus-run-session -- make ui-test
+make deb
+sudo apt-get install ./dist/puff_0.2.0-2_*.deb
+```
+
+Build on Debian rather than converting the Fedora RPM: the script resolves native library dependencies with `dpkg-shlibdeps`. Alternatively, open the repository's **Actions → Debian package → Run workflow**, then download the `puff-debian` artifact when the job succeeds. The workflow source is [debian.yml](.github/workflows/debian.yml).
+
+## Generate a macOS preview without owning a Mac
+
+Open this repository's **Actions → macOS preview → Run workflow**. The GitHub macOS runner installs Homebrew dependencies, builds the application, runs core/SQLite tests and generates a DMG. Download `puff-macos-homebrew-preview` from the successful run's artifacts. This workflow is prepared but has not yet been executed or validated. See [macos.yml](.github/workflows/macos.yml).
+
+To build directly on a Mac instead:
+
+```bash
+brew install pkgconf gtk4 libadwaita gtksourceview5 libpq sqlite librsvg
+export PKG_CONFIG_PATH="$(brew --prefix libpq)/lib/pkgconfig:$(brew --prefix sqlite)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+bash scripts/test-native.sh
+bash scripts/package-macos.sh
+```
+
+The output is `dist/puff-0.2.0-<architecture>-preview.dmg`. It contains a native application bundle and icon, uses macOS Keychain for saved passwords, and requires matching-architecture Homebrew runtime libraries on the destination Mac (`brew install gtk4 libadwaita gtksourceview5 libpq sqlite`). This is an unsigned, unnotarized, Homebrew-dependent preview; self-contained distribution and macOS GUI/Keychain validation remain outstanding. No Apple signing credentials are required to prepare this preview; a signed/notarized release requires a separate Apple Developer setup.
