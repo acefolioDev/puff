@@ -24,7 +24,7 @@ dependencies="${dependencies#shlibs:Depends=}"
 architecture="$(dpkg --print-architecture)"
 cat > "$stage/root/DEBIAN/control" <<CONTROL
 Package: puff
-Version: 0.2.0-2
+Version: 0.2.0-3
 Section: database
 Priority: optional
 Architecture: $architecture
@@ -40,5 +40,5 @@ install -Dm644 packaging/puff.desktop "$stage/root/usr/share/applications/io.git
 install -Dm644 packaging/puff.svg "$stage/root/usr/share/icons/hicolor/scalable/apps/puff.svg"
 install -Dm644 packaging/io.github.puff.Puff.metainfo.xml "$stage/root/usr/share/metainfo/io.github.puff.Puff.metainfo.xml"
 install -Dm644 LICENSE "$stage/root/usr/share/doc/puff/copyright"
-dpkg-deb --root-owner-group --build "$stage/root" "dist/puff_0.2.0-2_${architecture}.deb"
-dpkg-deb --info "dist/puff_0.2.0-2_${architecture}.deb"
+dpkg-deb --root-owner-group --build "$stage/root" "dist/puff_0.2.0-3_${architecture}.deb"
+dpkg-deb --info "dist/puff_0.2.0-3_${architecture}.deb"

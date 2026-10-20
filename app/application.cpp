@@ -6,6 +6,7 @@
 namespace puff {
 namespace {
 std::string self_test_path;
+bool self_test_postgres = false;
 bool self_test_failed = false;
 } // namespace
 Application::Application() : started(std::chrono::steady_clock::now()) {
@@ -38,8 +39,11 @@ Application::~Application() {
 }
 int Application::run(int argc, char **argv) {
   umask(0077);
-  if (argc == 3 && std::string(argv[1]) == "--self-test")
+  if (argc == 3 &&
+      (std::string(argv[1]) == "--self-test" || std::string(argv[1]) == "--self-test-postgres")) {
     self_test_path = argv[2];
+    self_test_postgres = std::string(argv[1]) == "--self-test-postgres";
+  }
   if (argc == 2 && std::string(argv[1]) == "--version") {
     std::cout << "My Puff 0.2.0 (C++20 / GTK4 / libadwaita)\n";
     return 0;
@@ -192,6 +196,14 @@ void Application::activate() {
     p.engine = "sqlite";
     p.name = "Native UI integration";
     p.database = self_test_path;
+    if (self_test_postgres) {
+      p.engine = "postgres";
+      p.host = self_test_path;
+      p.database = "postgres";
+      p.user = g_get_user_name();
+      p.port = 55439;
+      p.tls = "disable";
+    }
     p.readonly = false;
     auto session = Session::make(p);
     pending.push_back(session);

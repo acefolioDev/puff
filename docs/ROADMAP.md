@@ -40,7 +40,7 @@ explicit descriptor when a third adapter or additional object types are added.
    navigation and both themes. Add real PostgreSQL UI automation for the maintenance
    connection → SQL review → creation → new-tab connection path.
 2. Connection management page: saved-profile search, explicit connection status,
-   existing PostgreSQL database chooser, profile import/export without secrets,
+   profile import/export without secrets,
    reconnect and safe saved-profile editing. Keep SQLite file creation separate.
 3. SQL workspace: query tabs within a connection, saved query/history search,
    formatting and context-aware completion. Keep bounded streaming and cancellation.
@@ -55,3 +55,12 @@ explicit descriptor when a third adapter or additional object types are added.
    notarization. Add release checksums and clean-host installation/upgrade tests.
 
 These are outstanding work, not claims of implemented product functionality.
+
+## 21 October follow-up
+
+The long-SQL review regression is addressed with a bounded editor, complete SQL
+content, fixed actions and preserved production confirmation. PostgreSQL database
+discovery is now an adapter operation and a visible sidebar picker. It uses a
+separate short-lived read-only connection, respects CONNECT permissions, refreshes
+on demand and opens selected databases in a new connection form/tab. Original
+tabs and staged edits are preserved. In-place session switching is still deferred.

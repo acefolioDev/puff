@@ -8,11 +8,12 @@ namespace puff {
 class Application;
 class Workspace : public std::enable_shared_from_this<Workspace> {
   Application &app;
-  std::shared_ptr<Session> session;
+  std::shared_ptr<Session> session, catalog;
   GtkWidget *root = nullptr, *schema_box = nullptr, *status = nullptr, *editor = nullptr,
             *run_button = nullptr, *cancel_button = nullptr, *next_button = nullptr,
             *prev_button = nullptr, *save_button = nullptr, *table_label = nullptr,
-            *history_toggle = nullptr, *filter_entry = nullptr;
+            *history_toggle = nullptr, *filter_entry = nullptr, *database_selector = nullptr,
+            *database_status = nullptr, *database_refresh = nullptr;
   GtkSourceBuffer *buffer = nullptr;
   GtkSourceCompletionWords *words = nullptr;
   GtkSourceBuffer *word_buffer = nullptr;
@@ -28,7 +29,9 @@ class Workspace : public std::enable_shared_from_this<Workspace> {
   size_t offset = 0;
   std::vector<std::string> schemas;
   std::set<std::string> completions;
-  bool disposed = false;
+  bool disposed = false, loading_databases = false;
+  std::vector<std::string> database_names;
+  void databases_load();
   void buttons();
   void display(Page);
   void browse(const std::string &, const std::string &, size_t = 0);

@@ -20,7 +20,7 @@ Requires C++20, GTK ≥4.12, libadwaita ≥1.4, GtkSourceView 5 and libpq ≥17.
 ```bash
 cd releases
 sha256sum -c SHA256SUMS
-sudo dnf install ./puff-0.2.0-2.fc44.x86_64.rpm
+sudo dnf install ./puff-0.2.0-3.fc44.x86_64.rpm
 ```
 
 The verified Fedora 44 x86_64 installer is committed under `releases/`. To rebuild it after installing the development dependencies above:
@@ -100,7 +100,7 @@ See [resource measurements and conditions](docs/PERFORMANCE.md), [architecture a
 
 ## Remaining work
 
-MariaDB/MySQL drivers, integrated SSH, a database switcher/list, custom CA-file UI, SQL formatting, function-aware completion, parameter-entry UI, column/cell clipboard selection, full-result streaming CSV/JSON/SQL exports, SQLite file creation/backup UI, index/foreign-key creation forms, triggers/routines explorer, ER diagrams, schema comparison/migrations, backup schedules/history/encryption/retention, Podman discovery, systemd/journal UI, Flatpak and optional AI are not implemented. Raw SQL covers many administration operations in the meantime.
+MariaDB/MySQL drivers, integrated SSH, in-place connection switching, custom CA-file UI, SQL formatting, function-aware completion, parameter-entry UI, column/cell clipboard selection, full-result streaming CSV/JSON/SQL exports, SQLite file creation/backup UI, index/foreign-key creation forms, triggers/routines explorer, ER diagrams, schema comparison/migrations, backup schedules/history/encryption/retention, Podman discovery, systemd/journal UI, Flatpak and optional AI are not implemented. Raw SQL covers many administration operations in the meantime.
 
 SQLite BLOB cells require `hex(column)` for viewing; its explorer currently covers the main database only. Manual identifiers are limited to 63 UTF-8 bytes across both drivers. SQLite query plans, particularly RETURNING statements, may allocate engine memory beyond the bounded UI page. Wide result sets need further rendering benchmarks. Custom PostgreSQL types and unusual encodings need additional round-trip coverage. Browser-style search/filter across an entire table, reverse paging of arbitrary SQL streams and automatic result retention are deliberately absent. Keyring unlock workflows, TLS certificate-validation success, KDE/KWallet, direct Wayland rendering (these tests use X11 within a Wayland session), remote DNS/network partition behavior and multiple physical Fedora/GPU configurations still need release qualification. The RPM is unsigned and has been inspected/extracted/launched, not installed into this user's system.
 
@@ -123,9 +123,9 @@ sudo apt-get install g++ make pkg-config libgtk-4-dev libadwaita-1-dev \
   libgtksourceview-5-dev libsecret-1-dev libpq-dev libsqlite3-dev dpkg-dev \
   desktop-file-utils xvfb xauth dbus-x11 python3
 make test
-xvfb-run -a dbus-run-session -- make ui-test
+xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- make ui-test
 make deb
-sudo apt-get install ./dist/puff_0.2.0-2_*.deb
+sudo apt-get install ./dist/puff_0.2.0-3_*.deb
 ```
 
 Build on Debian rather than converting the Fedora RPM: the script resolves native library dependencies with `dpkg-shlibdeps`. Alternatively, open the repository's **Actions → Debian package → Run workflow**, then download the `puff-debian` artifact when the job succeeds. The workflow source is [debian.yml](.github/workflows/debian.yml).
@@ -144,3 +144,28 @@ bash scripts/package-macos.sh
 ```
 
 The output is `dist/puff-0.2.0-<architecture>-preview.dmg`. It contains a native application bundle and icon, uses macOS Keychain for saved passwords, and requires matching-architecture Homebrew runtime libraries on the destination Mac (`brew install gtk4 libadwaita gtksourceview5 libpq sqlite`). This is an unsigned, unnotarized, Homebrew-dependent preview; self-contained distribution and macOS GUI/Keychain validation remain outstanding. No Apple signing credentials are required to prepare this preview; a signed/notarized release requires a separate Apple Developer setup.
+
+## Browse databases and review large SQL scripts
+
+PostgreSQL connections show the current database in a sidebar dropdown. Its list
+loads automatically and includes non-template databases for which your role has
+CONNECT permission. **Refresh databases** updates it on demand. Selecting another
+database opens prefilled connection settings for a new tab; your current tab and
+unsaved edits remain open. Re-enter a password if required. Discovery uses a
+short-lived separate connection so it does not consume your query's result stream.
+SQLite connections show their existing database file instead of a server list.
+
+SQL reviews use a bounded, scrollable, read-only editor. The complete script is
+available for inspection and copying, with Apply/Cancel in a fixed footer.
+Production confirmation still requires the exact current database name.
+The sample file [sql/test-database-sample.sql](sql/test-database-sample.sql) runs
+as one PostgreSQL DO statement against `test`, creating only `puff_sample`.
+
+The real PostgreSQL GUI regression test can be run in an X11 desktop session or
+under Xvfb (install PostgreSQL server/client tools first):
+
+```bash
+bash scripts/test-native-postgres-ui.sh
+# Headless alternative:
+xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- bash scripts/test-native-postgres-ui.sh
+```

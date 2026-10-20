@@ -54,6 +54,9 @@ public:
   virtual void release() = 0;
   virtual std::vector<Column> columns(const std::string &, const std::string &) = 0;
   virtual Page schemas() = 0;
+  virtual Page databases() {
+    throw std::runtime_error("Database discovery is unavailable for this engine");
+  }
   virtual Page tables(const std::string &) = 0;
   virtual Page inspect(const std::string &, const std::string &) = 0;
   virtual Page browse(const std::string &, const std::string &, size_t) = 0;

@@ -17,7 +17,7 @@ sudo dnf install gcc-c++ make pkgconf-pkg-config gtk4-devel libadwaita-devel \
   desktop-file-utils clang-tools-extra postgresql-server postgresql
 make test integration
 make rpm
-sudo dnf install ./dist/puff-0.2.0-2*.rpm
+sudo dnf install ./dist/puff-0.2.0-3*.rpm
 ```
 
 Debian 13 (trixie) build dependencies:
@@ -27,9 +27,9 @@ sudo apt-get install g++ make pkg-config libgtk-4-dev libadwaita-1-dev \
   libgtksourceview-5-dev libpq-dev libsqlite3-dev libsecret-1-dev dpkg-dev \
   desktop-file-utils xvfb xauth dbus-x11 python3
 make test
-xvfb-run -a dbus-run-session -- make ui-test
+xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- make ui-test
 make deb
-sudo apt-get install ./dist/puff_0.2.0-2_*.deb
+sudo apt-get install ./dist/puff_0.2.0-3_*.deb
 ```
 
 The Debian script resolves ELF dependencies with dpkg-shlibdeps. The RPM script

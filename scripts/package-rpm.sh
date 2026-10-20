@@ -9,7 +9,7 @@ rpm_root="$(mktemp -d)"
 trap 'rm -rf "$rpm_root"' EXIT
 mkdir -p "$rpm_root"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 # A source archive is also produced for normal source-RPM rebuilding.
-tar --transform='s,^,puff-0.2.0/,' -czf "$rpm_root/SOURCES/puff-0.2.0.tar.gz" app scripts tests/native packaging Makefile .clang-format LICENSE README.md docs .github
+tar --transform='s,^,puff-0.2.0/,' -czf "$rpm_root/SOURCES/puff-0.2.0.tar.gz" app scripts tests/native sql packaging Makefile .clang-format LICENSE README.md docs .github
 cp "$rpm_root/SOURCES/puff-0.2.0.tar.gz" dist/
 cp dist/puff "$rpm_root/SOURCES/puff"
 cp packaging/puff.spec "$rpm_root/SPECS/"

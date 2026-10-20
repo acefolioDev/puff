@@ -1,6 +1,7 @@
 #include "core.hpp"
 #include "session.hpp"
 #include "store.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <glib.h>
@@ -235,8 +236,36 @@ void driver_test(const Profile &p) {
     require(text(created_connection->execute("SELECT current_database()").rows.at(0).at(0)) == name,
             "Connect to the newly created database with a quoted identifier");
     created_connection.reset();
+    auto listed = db->databases();
+    require(std::any_of(listed.rows.begin(), listed.rows.end(),
+                        [&](const auto &row) { return row.at(0) == Cell(name); }),
+            "Database discovery includes newly created quoted names");
+    require(std::none_of(listed.rows.begin(), listed.rows.end(),
+                         [](const auto &row) {
+                           return row.at(0) == Cell("template0") || row.at(0) == Cell("template1");
+                         }),
+            "Database discovery hides template databases");
     throws([&] { db->create_database(name); });
     db->execute("DROP DATABASE " + quote(name));
+    listed = db->databases();
+    require(std::none_of(listed.rows.begin(), listed.rows.end(),
+                         [&](const auto &row) { return row.at(0) == Cell(name); }),
+            "Database discovery refresh removes dropped databases");
+    db->create_database("test");
+    auto sample_profile = p;
+    sample_profile.database = "test";
+    auto sample = connect(sample_profile, cancel);
+    std::ifstream seed_file("sql/test-database-sample.sql");
+    require(seed_file.good(), "Sample seed file exists");
+    std::string seed((std::istreambuf_iterator<char>(seed_file)), std::istreambuf_iterator<char>());
+    sample->execute(seed);
+    require(sample->execute("SELECT count(*) FROM puff_sample.customers").rows.at(0).at(0) ==
+                Cell("1000"),
+            "Entire sample DO block executes through the application's driver");
+    throws([&] { sample->execute(seed); }, "already exists");
+    throws([&] { db->execute(seed); }, "Connect to database test first");
+    sample.reset();
+    db->execute("DROP DATABASE test");
     db->execute("SET statement_timeout='100ms'");
     throws([&] { db->execute("SELECT pg_sleep(2)"); }, "57014");
     db->execute("SET statement_timeout='30s'");
@@ -253,6 +282,13 @@ void driver_test(const Profile &p) {
     throws([&] { limited->create_database("puff_permission_must_not_exist"); }, "42501");
     require(limited->execute("SELECT 1").rows.size() == 1,
             "Connection recovers after denied creation");
+    db->create_database("puff_hidden");
+    db->execute("REVOKE CONNECT ON DATABASE puff_hidden FROM PUBLIC");
+    auto restricted_databases = limited->databases();
+    require(std::none_of(restricted_databases.rows.begin(), restricted_databases.rows.end(),
+                         [](const auto &row) { return row.at(0) == Cell("puff_hidden"); }),
+            "Database discovery respects CONNECT privileges");
+    db->execute("DROP DATABASE puff_hidden");
     limited.reset();
     db->execute("DROP ROLE puff_auth");
     bad = p;

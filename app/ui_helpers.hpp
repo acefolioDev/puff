@@ -50,43 +50,9 @@ inline std::string preview(const std::string &s, size_t maximum) {
 inline std::string entry_text(GtkWidget *w) {
   return gtk_editable_get_text(GTK_EDITABLE(w));
 }
-inline void confirm(GtkWindow *parent, const std::string &title, const std::string &body,
-                    const std::string &target, Action action) {
-  auto *d = adw_message_dialog_new(parent, title.c_str(), body.c_str());
-  adw_message_dialog_add_response(ADW_MESSAGE_DIALOG(d), "cancel", "Cancel");
-  adw_message_dialog_add_response(ADW_MESSAGE_DIALOG(d), "apply", "Apply");
-  adw_message_dialog_set_response_appearance(ADW_MESSAGE_DIALOG(d), "apply",
-                                             ADW_RESPONSE_DESTRUCTIVE);
-  adw_message_dialog_set_default_response(ADW_MESSAGE_DIALOG(d), "cancel");
-  adw_message_dialog_set_close_response(ADW_MESSAGE_DIALOG(d), "cancel");
-  if (!target.empty()) {
-    auto *e = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(e), ("Type " + target + " to confirm").c_str());
-    adw_message_dialog_set_extra_child(ADW_MESSAGE_DIALOG(d), e);
-    adw_message_dialog_set_response_enabled(ADW_MESSAGE_DIALOG(d), "apply", FALSE);
-    auto *ctx = new std::pair<GtkWidget *, std::string>(d, target);
-    g_signal_connect_data(
-        e, "changed", reinterpret_cast<GCallback>(+[](GtkEditable *e, gpointer p) {
-          auto &[d, target] = *static_cast<std::pair<GtkWidget *, std::string> *>(p);
-          adw_message_dialog_set_response_enabled(ADW_MESSAGE_DIALOG(d), "apply",
-                                                  entry_text(GTK_WIDGET(e)) == target);
-        }),
-        ctx,
-        +[](gpointer p, GClosure *) {
-          delete static_cast<std::pair<GtkWidget *, std::string> *>(p);
-        },
-        G_CONNECT_DEFAULT);
-  }
-  auto *fn = new Action(std::move(action));
-  g_signal_connect_data(
-      d, "response",
-      reinterpret_cast<GCallback>(+[](AdwMessageDialog *, const char *response, gpointer p) {
-        if (std::string(response) == "apply")
-          (*static_cast<Action *>(p))();
-      }),
-      fn, +[](gpointer p, GClosure *) { delete static_cast<Action *>(p); }, G_CONNECT_DEFAULT);
-  gtk_window_present(GTK_WINDOW(d));
-}
+inline void confirm(GtkWindow *, const std::string &, const std::string &, const std::string &,
+                    Action);
+
 struct Form {
   GtkWindow *window;
   GtkWidget *fields, *error, *actions;
@@ -204,10 +170,12 @@ struct Form {
     gtk_box_append(GTK_BOX(actions), button(
                                          title,
                                          [this, action] {
+                                           auto still_alive = alive;
                                            try {
                                              action();
                                            } catch (const std::exception &e) {
-                                             report(e.what());
+                                             if (*still_alive)
+                                               report(e.what());
                                            }
                                          },
                                          "suggested-action"));
@@ -238,4 +206,68 @@ struct Form {
     gtk_window_present(window);
   }
 };
+// Keep unbounded SQL out of a message dialog's heading/body measurement.
+// Scroll only the preview; confirmation and cancellation stay in the fixed footer.
+inline void confirm(GtkWindow *parent, const std::string &title, const std::string &body,
+                    const std::string &target, Action action) {
+  auto *form = new Form(parent, title);
+  gtk_window_set_default_size(form->window, 820, 600);
+  form->note("Review the operation before applying it.");
+  if (body.size() > 400 || body.find('\n') != std::string::npos) {
+    auto *source = gtk_source_view_new();
+    auto *buffer = GTK_SOURCE_BUFFER(gtk_text_view_get_buffer(GTK_TEXT_VIEW(source)));
+    gtk_source_buffer_set_language(buffer, gtk_source_language_manager_get_language(
+                                               gtk_source_language_manager_get_default(), "sql"));
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buffer), body.data(), body.size());
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(source), FALSE);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(source), FALSE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(source), TRUE);
+    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(source), TRUE);
+    gtk_accessible_update_property(GTK_ACCESSIBLE(source), GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                   "Operation preview", -1);
+    auto *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(scroll, -1, 280);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), source);
+    gtk_widget_add_css_class(scroll, "frame");
+    gtk_box_append(GTK_BOX(form->fields), scroll);
+    g_object_set_data(G_OBJECT(form->window), "review-source", source);
+  } else {
+    auto *description = label(body, true);
+    gtk_label_set_selectable(GTK_LABEL(description), TRUE);
+    gtk_box_append(GTK_BOX(form->fields), description);
+  }
+  GtkWidget *entry = nullptr;
+  if (!target.empty())
+    entry = form->entry("confirmation", "Type “" + target + "” to confirm");
+  form->submit("Apply", [form, action, alive = form->alive] {
+    auto run = action;
+    auto still_alive = alive;
+    run();
+    if (*still_alive)
+      form->close();
+  });
+  auto *apply = gtk_widget_get_last_child(form->actions);
+  gtk_widget_remove_css_class(apply, "suggested-action");
+  gtk_widget_add_css_class(apply, "destructive-action");
+  if (entry) {
+    gtk_widget_set_sensitive(apply, FALSE);
+    auto *ctx = new std::pair<GtkWidget *, std::string>(apply, target);
+    g_signal_connect_data(
+        entry, "changed", reinterpret_cast<GCallback>(+[](GtkEditable *e, gpointer data) {
+          const auto &[apply, target] = *static_cast<std::pair<GtkWidget *, std::string> *>(data);
+          gtk_widget_set_sensitive(apply, entry_text(GTK_WIDGET(e)) == target);
+        }),
+        ctx,
+        +[](gpointer data, GClosure *) {
+          delete static_cast<std::pair<GtkWidget *, std::string> *>(data);
+        },
+        G_CONNECT_DEFAULT);
+  }
+  auto *cancel = gtk_widget_get_first_child(form->actions);
+  gtk_window_set_default_widget(form->window, cancel);
+  form->present();
+  gtk_widget_grab_focus(cancel);
+}
 } // namespace puff

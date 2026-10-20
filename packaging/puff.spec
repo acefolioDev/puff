@@ -1,6 +1,6 @@
 Name:           puff
 Version:        0.2.0
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Native GTK database workspace for PostgreSQL and SQLite
 License:        MIT
 Source0:        %{name}-%{version}.tar.gz
@@ -65,5 +65,9 @@ desktop-file-validate packaging/puff.desktop
 %{_datadir}/metainfo/io.github.puff.Puff.metainfo.xml
 
 %changelog
+* Wed Oct 21 2026 Puff contributors - 0.2.0-3
+- Bound long SQL reviews and preserve visible confirmation actions
+- Discover connectable PostgreSQL databases in a sidebar picker
+
 * Sun Oct 18 2026 Puff contributors - 0.2.0-1
 - Compiled C++20 GTK4/libadwaita application and native database drivers

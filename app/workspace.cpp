@@ -25,10 +25,10 @@ PuffRow *row_item(size_t index) {
   return r;
 }
 // Optional snapshots of disposable test UI only; never capture a user's workspace.
-void capture_test_widget(GtkWidget *widget, const std::string &name) {
+bool capture_test_widget(GtkWidget *widget, const std::string &name) {
   const char *directory = g_getenv("PUFF_CAPTURE_DIR");
   if (!directory)
-    return;
+    return true;
   auto *paintable = gtk_widget_paintable_new(widget);
   auto *snapshot = gtk_snapshot_new();
   int width = gtk_widget_get_width(widget), height = gtk_widget_get_height(widget);
@@ -36,7 +36,7 @@ void capture_test_widget(GtkWidget *widget, const std::string &name) {
   auto *node = gtk_snapshot_free_to_node(snapshot);
   g_object_unref(paintable);
   if (!node)
-    throw std::runtime_error("Test UI snapshot is empty");
+    return false; // The first frame may not have been painted yet.
   graphene_rect_t viewport;
   graphene_rect_init(&viewport, 0, 0, static_cast<float>(width), static_cast<float>(height));
   auto *texture = gsk_renderer_render_texture(
@@ -47,6 +47,7 @@ void capture_test_widget(GtkWidget *widget, const std::string &name) {
   gsk_render_node_unref(node);
   if (!saved)
     throw std::runtime_error("Cannot save test UI snapshot");
+  return true;
 }
 std::vector<std::string> types = {"text",      "varchar(255)", "integer", "bigint",
                                   "numeric",   "boolean",      "uuid",    "date",
@@ -55,6 +56,8 @@ std::vector<std::string> types = {"text",      "varchar(255)", "integer", "bigin
 Workspace::Workspace(Application &a, std::shared_ptr<Session> s) : app(a), session(std::move(s)) {}
 Workspace::~Workspace() {
   dispose();
+  if (catalog)
+    catalog->wait();
   if (rows)
     g_object_unref(rows);
   if (words)
@@ -71,6 +74,49 @@ void Workspace::build() {
   auto *sidebar = box();
   gtk_widget_set_size_request(sidebar, 210, -1);
   gtk_box_append(GTK_BOX(sidebar), padded(label(profile().group + " · " + profile().environment)));
+  auto *database_panel = padded(box(), 12);
+  gtk_box_append(GTK_BOX(database_panel), label("Database"));
+  if (profile().engine == "postgres") {
+    const char *initial_databases[] = {profile().database.c_str(), nullptr};
+    database_selector = gtk_drop_down_new_from_strings(initial_databases);
+    gtk_widget_set_sensitive(database_selector, FALSE);
+    gtk_widget_set_tooltip_text(database_selector,
+                                "Choose an available database to connect in a new tab");
+    gtk_box_append(GTK_BOX(database_panel), database_selector);
+    database_status = label("Loading databases…", true);
+    gtk_widget_add_css_class(database_status, "dim-label");
+    gtk_box_append(GTK_BOX(database_panel), database_status);
+    database_refresh = button("Refresh databases", [this] { databases_load(); });
+    gtk_box_append(GTK_BOX(database_panel), database_refresh);
+    g_signal_connect(
+        database_selector, "notify::selected",
+        reinterpret_cast<GCallback>(+[](GObject *, GParamSpec *, gpointer data) {
+          auto *w = static_cast<Workspace *>(data);
+          if (w->loading_databases || w->disposed)
+            return;
+          auto selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(w->database_selector));
+          if (selected >= w->database_names.size() ||
+              w->database_names[selected] == w->profile().database)
+            return;
+          Profile next = w->profile();
+          next.database = w->database_names[selected];
+          next.name = next.database;
+          next.id.clear();
+          next.password.clear();
+          next.remember = false;
+          w->loading_databases = true;
+          auto current =
+              std::find(w->database_names.begin(), w->database_names.end(), w->profile().database);
+          gtk_drop_down_set_selected(GTK_DROP_DOWN(w->database_selector),
+                                     std::distance(w->database_names.begin(), current));
+          w->loading_databases = false;
+          w->app.connection(next);
+        }),
+        this);
+  } else {
+    gtk_box_append(GTK_BOX(database_panel), label(profile().database, true));
+  }
+  gtk_box_append(GTK_BOX(sidebar), database_panel);
   gtk_box_append(GTK_BOX(sidebar), button("Reload schemas", [this] { schemas_load(); }));
   schema_box = box();
   auto *side_scroll = gtk_scrolled_window_new();
@@ -296,6 +342,58 @@ void Workspace::build() {
   gtk_box_append(GTK_BOX(body), status);
   buttons();
   schemas_load();
+  if (database_selector)
+    databases_load();
+}
+void Workspace::databases_load() {
+  if (disposed || !database_selector || (catalog && catalog->busy))
+    return;
+  gtk_widget_set_sensitive(database_refresh, FALSE);
+  gtk_widget_set_sensitive(database_selector, FALSE);
+  gtk_label_set_text(GTK_LABEL(database_status), "Loading databases…");
+  auto p = profile();
+  p.readonly = true;
+  catalog = Session::make(std::move(p));
+  auto request = catalog;
+  auto weak = weak_from_this();
+  request->submit(
+      [](Session &s) {
+        s.driver = connect(s.profile, s.cancelled);
+        return s.driver->databases();
+      },
+      [weak, request](Page result, std::string error) {
+        request->close();
+        auto w = weak.lock();
+        if (!w || w->disposed)
+          return;
+        gtk_widget_set_sensitive(w->database_refresh, TRUE);
+        if (!error.empty()) {
+          gtk_label_set_text(GTK_LABEL(w->database_status),
+                             ("Cannot list databases: " + error).c_str());
+          return;
+        }
+        w->database_names.clear();
+        for (const auto &row : result.rows)
+          if (!row.empty() && row[0])
+            w->database_names.push_back(*row[0]);
+        if (std::find(w->database_names.begin(), w->database_names.end(), w->profile().database) ==
+            w->database_names.end())
+          w->database_names.insert(w->database_names.begin(), w->profile().database);
+        auto *names = gtk_string_list_new(nullptr);
+        for (const auto &name : w->database_names)
+          gtk_string_list_append(names, name.c_str());
+        w->loading_databases = true;
+        gtk_drop_down_set_model(GTK_DROP_DOWN(w->database_selector), G_LIST_MODEL(names));
+        auto current =
+            std::find(w->database_names.begin(), w->database_names.end(), w->profile().database);
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(w->database_selector),
+                                   std::distance(w->database_names.begin(), current));
+        g_object_unref(names);
+        w->loading_databases = false;
+        gtk_widget_set_sensitive(w->database_selector, TRUE);
+        gtk_label_set_text(GTK_LABEL(w->database_status),
+                           "Choose a database to open a new connection tab.");
+      });
 }
 void Workspace::buttons() {
   bool busy = session->busy;
@@ -396,7 +494,7 @@ void Workspace::execute(const std::string &sql) {
         }
       };
       if (needs_review(sql) || w->profile().environment == "production")
-        confirm(w->app.parent(), "Review SQL", sql.substr(0, 12000),
+        confirm(w->app.parent(), "Review SQL", sql,
                 w->profile().environment == "production" ? w->profile().database : "", go);
       else
         go();
@@ -991,6 +1089,7 @@ void Workspace::create_database() {
                   if (auto w = weak.lock()) {
                     gtk_label_set_text(GTK_LABEL(w->status),
                                        ("Created database “" + name + "”.").c_str());
+                    w->databases_load();
                     Profile next = w->profile();
                     next.database = name;
                     next.password.clear();
@@ -1296,6 +1395,8 @@ void Workspace::dispose() {
     filter_source = 0;
   }
   session->close();
+  if (catalog)
+    catalog->close();
   if (rows)
     g_list_store_remove_all(rows);
   page = {};
@@ -1308,6 +1409,9 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
     std::weak_ptr<Workspace> w;
     std::function<void(bool, std::string)> done;
     int phase = 0;
+    std::string review_sql;
+    bool review_applied = false;
+    int review_attempts = 0;
     bool scroll_checked = false;
     std::chrono::steady_clock::time_point resume{};
     std::chrono::steady_clock::time_point deadline =
@@ -1325,7 +1429,8 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
           if (std::chrono::steady_clock::now() > t->deadline)
             throw std::runtime_error("Native UI integration timed out: " +
                                      std::string(gtk_label_get_text(GTK_LABEL(w->status))));
-          if (w->session->busy || std::chrono::steady_clock::now() < t->resume)
+          if (w->session->busy || (w->catalog && w->catalog->busy) ||
+              std::chrono::steady_clock::now() < t->resume)
             return G_SOURCE_CONTINUE;
           auto require = [](bool value, const char *message) {
             if (!value)
@@ -1334,7 +1439,30 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
           switch (t->phase++) {
           case 0:
             require(w->schemas.size() == 1, "Schemas did not load");
-            w->browse("main", "t");
+            if (w->profile().engine == "postgres") {
+              require(w->database_selector && gtk_widget_get_sensitive(w->database_selector),
+                      "Available databases did not load");
+              auto other = std::find(w->database_names.begin(), w->database_names.end(), "test");
+              require(other != w->database_names.end(), "Available database test is missing");
+              gtk_drop_down_set_selected(GTK_DROP_DOWN(w->database_selector),
+                                         std::distance(w->database_names.begin(), other));
+              Form *connection = nullptr;
+              GList *windows = gtk_window_list_toplevels();
+              for (auto *node = windows; node; node = node->next)
+                if (auto *f =
+                        static_cast<Form *>(g_object_get_data(G_OBJECT(node->data), "puff-form")))
+                  connection = f;
+              g_list_free(windows);
+              require(connection && connection->get("database") == "test",
+                      "Database selection did not prefill the new connection");
+              require(connection->get("password").empty(),
+                      "Database selection copied a password into the form");
+              connection->close();
+              require(w->database_names.at(gtk_drop_down_get_selected(
+                          GTK_DROP_DOWN(w->database_selector))) == "postgres",
+                      "Database selection mislabels the current connection");
+            }
+            w->browse(w->profile().engine == "postgres" ? "public" : "main", "t");
             break;
           case 1:
             require(w->page.rows.size() == 200, "Table page is not bounded to 200 rows");
@@ -1392,6 +1520,8 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
           }
           case 3:
             require(w->page.rows.size() == 200 && w->page.more, "Raw SQL paging failed");
+            if (w->database_selector)
+              w->databases_load();
             w->next();
             break;
           case 4:
@@ -1417,7 +1547,9 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
             [[fallthrough]];
           }
           case 6: {
-            w->app.create_database();
+            Profile creation;
+            creation.readonly = false;
+            w->app.connection(creation, true);
             GList *windows = gtk_window_list_toplevels();
             for (auto *node = windows; node; node = node->next)
               if (auto *f =
@@ -1444,7 +1576,11 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
                         bounds.origin.y + bounds.size.height <=
                             gtk_widget_get_height(GTK_WIDGET(form->window)),
                     "Connection actions are clipped in a short window");
-            capture_test_widget(GTK_WIDGET(form->window), "connection");
+            if (!capture_test_widget(GTK_WIDGET(form->window), "connection")) {
+              --t->phase;
+              t->resume = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+              break;
+            }
             form->set("engine", "sqlite");
             require(!gtk_widget_get_visible(gtk_widget_get_parent(form->inputs.at("password"))),
                     "SQLite form exposes PostgreSQL credentials");
@@ -1458,21 +1594,107 @@ void Workspace::exercise(std::function<void(bool, std::string)> done) {
                         std::string::npos,
                     "Invalid port was not rejected inline");
             form->close();
-            auto *menu = GTK_MENU_BUTTON(g_object_get_data(G_OBJECT(w->root), "tools-menu"));
-            gtk_menu_button_popup(menu);
+            gtk_window_present(w->app.parent());
             t->resume = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
             break;
           }
           case 8: {
             auto *menu = GTK_MENU_BUTTON(g_object_get_data(G_OBJECT(w->root), "tools-menu"));
+            gtk_menu_button_popup(menu);
+            t->resume = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+            break;
+          }
+          case 9: {
+            auto *menu = GTK_MENU_BUTTON(g_object_get_data(G_OBJECT(w->root), "tools-menu"));
             auto *popover = gtk_menu_button_get_popover(menu);
-            require(gtk_widget_get_width(GTK_WIDGET(popover)) >= 280,
-                    "Database tools menu collapsed horizontally");
-            capture_test_widget(GTK_WIDGET(popover), "database-tools");
+            auto *scroll = GTK_SCROLLED_WINDOW(gtk_popover_get_child(popover));
+            auto *items = gtk_scrolled_window_get_child(scroll);
+            if (GTK_IS_VIEWPORT(items))
+              items = gtk_viewport_get_child(GTK_VIEWPORT(items));
+            int required_width = 0;
+            for (auto *item = gtk_widget_get_first_child(items); item;
+                 item = gtk_widget_get_next_sibling(item)) {
+              int natural = 0;
+              gtk_widget_measure(gtk_button_get_child(GTK_BUTTON(item)), GTK_ORIENTATION_HORIZONTAL,
+                                 -1, nullptr, &natural, nullptr, nullptr);
+              required_width = std::max(required_width, natural + 16);
+            }
+            require(gtk_widget_get_width(GTK_WIDGET(popover)) >= required_width,
+                    "Database tools menu clips its action labels");
+            if (!capture_test_widget(GTK_WIDGET(popover), "database-tools")) {
+              --t->phase;
+              t->resume = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+              break;
+            }
             gtk_menu_button_popdown(menu);
+            for (int i = 0; i < 1000; ++i)
+              t->review_sql +=
+                  "SELECT 'A complete SQL preview with pagination and long scripts';\n";
+            t->review_sql += "-- final line must remain visible in the buffer";
+            confirm(w->app.parent(), "Review SQL", t->review_sql, "test", [t] {
+              if (++t->review_attempts == 1)
+                throw std::runtime_error("Review callback rejected the operation");
+              t->review_applied = true;
+            });
+            GList *windows = gtk_window_list_toplevels();
+            for (auto *node = windows; node; node = node->next)
+              if (auto *f =
+                      static_cast<Form *>(g_object_get_data(G_OBJECT(node->data), "puff-form")))
+                gtk_window_set_default_size(f->window, 820, 480);
+            g_list_free(windows);
+            t->resume = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+            break;
+          }
+          case 10: {
+            Form *review = nullptr;
+            GList *windows = gtk_window_list_toplevels();
+            for (auto *node = windows; node; node = node->next)
+              if (gtk_widget_get_visible(GTK_WIDGET(node->data)) &&
+                  g_object_get_data(G_OBJECT(node->data), "review-source"))
+                review = static_cast<Form *>(g_object_get_data(G_OBJECT(node->data), "puff-form"));
+            g_list_free(windows);
+            require(review, "SQL review did not open");
+            auto *source =
+                GTK_TEXT_VIEW(g_object_get_data(G_OBJECT(review->window), "review-source"));
+            require(source && !gtk_text_view_get_editable(source), "SQL preview is not read-only");
+            GtkTextIter start, end;
+            auto *buffer = gtk_text_view_get_buffer(source);
+            gtk_text_buffer_get_bounds(buffer, &start, &end);
+            gchar *contents = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+            bool complete = t->review_sql == contents;
+            g_free(contents);
+            require(complete, "Long SQL preview was truncated");
+            graphene_rect_t bounds;
+            require(gtk_widget_compute_bounds(review->actions, GTK_WIDGET(review->window), &bounds),
+                    "SQL review actions have no layout");
+            require(bounds.origin.y >= 0 &&
+                        bounds.origin.y + bounds.size.height <=
+                            gtk_widget_get_height(GTK_WIDGET(review->window)) &&
+                        gtk_widget_get_height(GTK_WIDGET(review->window)) <= 600,
+                    "Long SQL pushed confirmation actions outside the window");
+            if (!gtk_widget_get_mapped(GTK_WIDGET(review->window)) ||
+                !capture_test_widget(GTK_WIDGET(review->window), "sql-review")) {
+              --t->phase;
+              t->resume = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+              break;
+            }
+            auto *apply = gtk_widget_get_last_child(review->actions);
+            require(!gtk_widget_get_sensitive(apply), "Production confirmation was bypassed");
+            review->set("confirmation", "wrong");
+            require(!gtk_widget_get_sensitive(apply), "Incorrect confirmation was accepted");
+            review->set("confirmation", "test");
+            require(gtk_widget_get_sensitive(apply), "Correct confirmation was rejected");
+            g_signal_emit_by_name(apply, "clicked");
+            require(!t->review_applied && gtk_widget_get_visible(GTK_WIDGET(review->window)) &&
+                        std::string(gtk_label_get_text(GTK_LABEL(review->error))) ==
+                            "Review callback rejected the operation",
+                    "Review callback failure closed the dialog or lost its error");
+            g_signal_emit_by_name(apply, "clicked");
+            require(t->review_applied, "SQL review Apply did not execute its action");
             t->done(true, "PASS: compiled GTK UI connection, schema loading, virtual grid, "
                           "table/raw paging, cell staging/discard, schema dialog, result cleanup, "
-                          "connection form layout/validation, tools menu width");
+                          "connection form layout/validation, tools menu width, full SQL review "
+                          "and database discovery");
             return G_SOURCE_REMOVE;
           }
           }

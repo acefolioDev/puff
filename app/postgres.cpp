@@ -415,6 +415,12 @@ public:
       throw;
     }
   }
+  Page databases() override {
+    return all("SELECT datname FROM pg_database WHERE datallowconn "
+               "AND (NOT datistemplate OR datname = current_database()) "
+               "AND (has_database_privilege(oid, 'CONNECT') OR datname = current_database()) "
+               "ORDER BY datname");
+  }
   void create_database(const std::string &name) override {
     if (profile.readonly)
       throw std::runtime_error("Connection is read-only");
