@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=My Puff
+GenericName=Database Client
+Comment=Native PostgreSQL and SQLite workspace
+Exec=puff
+Icon=puff
+Terminal=false
+Categories=Development;Database;
+Keywords=postgres;postgresql;sqlite;sql;database;
+StartupNotify=true

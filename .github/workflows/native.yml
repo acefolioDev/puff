@@ -1,0 +1,22 @@
+name: Fedora native
+on: [push, pull_request]
+jobs:
+  fedora:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - uses: actions/checkout@v4
+      - run: dnf install -y gcc-c++ make pkgconf-pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libpq-devel sqlite-devel libsecret-devel postgresql-server postgresql clang-tools-extra desktop-file-utils rpm-build xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon python3
+      - run: make check test
+      - name: Database integration as unprivileged user
+        run: |
+          useradd -m puff-test
+          chown -R puff-test:puff-test .
+          su puff-test -c "cd '$PWD' && make integration"
+      - name: GTK lifecycle
+        run: xvfb-run -a dbus-run-session -- make ui-test
+      - run: make rpm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: puff-fedora-rpm
+          path: dist/*.rpm

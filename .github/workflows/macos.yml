@@ -1,0 +1,16 @@
+name: macOS preview
+on: [workflow_dispatch]
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install pkgconf gtk4 libadwaita gtksourceview5 libpq sqlite librsvg
+      - name: Configure native dependencies
+        run: echo "PKG_CONFIG_PATH=$(brew --prefix libpq)/lib/pkgconfig:$(brew --prefix sqlite)/lib/pkgconfig" >> "$GITHUB_ENV"
+      - run: bash scripts/test-native.sh
+      - run: bash scripts/package-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: puff-macos-homebrew-preview
+          path: dist/*preview.dmg

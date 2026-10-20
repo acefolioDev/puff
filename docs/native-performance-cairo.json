@@ -1,0 +1,96 @@
+{
+  "platform": "Fedora 44 x86_64",
+  "display_session": "wayland",
+  "gdk_backend": "x11",
+  "gsk_renderer": "cairo",
+  "method": "/proc process RSS/HWM and CPU ticks; GtkColumnView model timing. One fresh process per run; warm filesystem cache. No cache flushing or privileged measurements.",
+  "limits": {
+    "rows_per_page": 200,
+    "page_bytes": 4194304,
+    "cell_bytes": 262144,
+    "max_tabs": 4
+  },
+  "startup": {
+    "process_to_mapped_ms": 296.6962030004652,
+    "application_to_mapped_ms": 239.907,
+    "idle": {
+      "VmHWM": 99812,
+      "VmRSS": 96232,
+      "Threads": 11,
+      "ticks": 44,
+      "PssKiB": 56662
+    },
+    "idle_cpu_one_core_percent": 0.0,
+    "idle_cpu_samples_percent": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "workloads": [
+    {
+      "connections_and_tabs": 1,
+      "fixture_rows": 100000,
+      "visible_page_rows": 200,
+      "loaded": {
+        "VmHWM": 110912,
+        "VmRSS": 110912,
+        "Threads": 13,
+        "ticks": 74,
+        "PssKiB": 69169
+      },
+      "result_released": {
+        "VmHWM": 121008,
+        "VmRSS": 114844,
+        "Threads": 13,
+        "ticks": 109,
+        "PssKiB": 73433
+      },
+      "all_tabs_disconnected": {
+        "VmHWM": 121008,
+        "VmRSS": 117640,
+        "Threads": 12,
+        "ticks": 122,
+        "PssKiB": 74801
+      },
+      "model_update_ms": [
+        136.76,
+        42.3648,
+        55.307,
+        35.6112
+      ]
+    },
+    {
+      "connections_and_tabs": 4,
+      "fixture_rows": 100000,
+      "visible_page_rows": 200,
+      "loaded": {
+        "VmHWM": 116652,
+        "VmRSS": 116652,
+        "Threads": 16,
+        "ticks": 62,
+        "PssKiB": 74017
+      },
+      "result_released": {
+        "VmHWM": 121020,
+        "VmRSS": 118652,
+        "Threads": 16,
+        "ticks": 92,
+        "PssKiB": 77175
+      },
+      "all_tabs_disconnected": {
+        "VmHWM": 121284,
+        "VmRSS": 121284,
+        "Threads": 12,
+        "ticks": 116,
+        "PssKiB": 78431
+      },
+      "model_update_ms": [
+        100.147,
+        30.8775,
+        35.1486,
+        33.2503
+      ]
+    }
+  ]
+}

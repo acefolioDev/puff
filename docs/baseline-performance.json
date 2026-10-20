@@ -1,0 +1,8 @@
+{
+  "platform": "Fedora 44 x86_64",
+  "baseline": "Bun/webview 0.1.0",
+  "rss_process_tree_kib": 422384,
+  "idle_cpu_one_core_percent": 1.6666666666666667,
+  "processes": 8,
+  "note": "RSS sums shared pages; 3 second idle sample; startup to readiness unmeasured."
+}

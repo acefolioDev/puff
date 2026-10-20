@@ -1,0 +1,13 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.core
+
+# Local assistant state and credentials
+.agents/
+.codex/
+.aws/
+.env
+.env.*
+!.env.example
